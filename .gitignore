@@ -35,4 +35,36 @@ results_quick/
 # IDE
 .vscode/
 .idea/
+
+# =========================
+# Data / corpora (DO NOT COMMIT)
+# =========================
+/data/*
+/models/
+
+# Large corpora
 final_english_corpus.json
+**/final_english_corpus.json
+
+# =========================
+# Retrieval artifacts (COMMIT)
+# =========================
+# We DO commit retrieval caches for reproducibility:
+# - outputs/**/bm25_index.pkl
+# - outputs/**/bm25_corpus_ids.pkl
+# - outputs/**/retrieval_results.pkl
+# So do NOT ignore *.pkl globally.
+
+# If you want to keep other scratch outputs untracked, add them explicitly below.
+
+# =========================
+# Training artifacts (DO NOT COMMIT)
+# =========================
+**/checkpoint-*/
+**/trainer_state.json
+**/training_args.bin
+**/*.safetensors
+**/*.pt
+
+# Logs
+*.log

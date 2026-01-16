@@ -1,125 +1,45 @@
-# QuanTemp Numeric Decomposition
+# QuanTemp Numeric Decomposition (Group 17)
 
-Repository for **Group 17**: claim decomposition (numeric/temporal-focused) → BM25 retrieval → NLI-based fact checking.
+Claim decomposition experiments targeting **numeric/temporal** claims:
+**decomposition → BM25 retrieval → NLI fact checking**.
 
-This repo contains *our code and experiment logic* (scripts + notebooks). Large artifacts (datasets, corpora, BM25 indexes, checkpoints) are excluded via `.gitignore`.
+This repo contains only our scripts/notebooks. Large datasets/corpora and model checkpoints are excluded.
 
-## Project story (what we did)
+## What’s in this repo
+- `retrieval.py`: builds/loads a local BM25 index and writes retrieval caches
+- `bart.py`: example HuggingFace training loop using cached retrieval outputs
+- `train_and_evaluate.ipynb`: experiments / analysis notebook
+- `requirements.txt`: dependencies
 
-### R1 — Model selection (reasoning-first)
-We began by selecting NLI/verifier models with strong general-purpose reasoning ability. We compared multiple pretrained NLI-style sequence classification models (e.g., RoBERTa-MNLI, DeBERTa variants, BART-MNLI).
+## What we commit vs not
+- ✅ Commit: retrieval caches for reproducibility (under `outputs/`):
+  - `bm25_index.pkl`, `bm25_corpus_ids.pkl`, `retrieval_results.pkl`
+- ❌ Do not commit: datasets/corpora under `data/`, `models/`, large corpus JSON, training checkpoints
 
-**Why these models?**
-- They provide a clean, controllable baseline for fact checking: (evidence, claim) → {entailment, contradiction, neutral}.
-- They are widely used and easy to reproduce via HuggingFace.
+## Required data (not in git)
+Place QuanTemp-format data locally (paths can be changed in scripts):
+- Claims: `data/quantemp/data/raw_data/{train,val,test}_claims_quantemp.json`
+- Repo BM25 reference (ClaimDecomp): `data/quantemp/data/bm25_scored_evidence/bm25_top_100_claimdecomp.json`
+- Evidence corpus for BM25 indexing: `final_english_corpus.json`
 
-**Outcome:** In our initial analysis, **RoBERTa-based NLI** performed best / most reliably for our setup, so we used it as our primary verifier when studying decomposition effects.
+## Reproduce (high level)
+1) Install deps: `pip install -r requirements.txt`
+2) Run retrieval: execute `retrieval.py` (produces caches under `outputs/`)
+3) Run evaluation / analysis: use `train_and_evaluate.ipynb`
+4) Fine-tune verifier: run `bart.py` (reads retrieval caches)
 
-### R2 — Decomposition + retrieval quality (FactIR)
-Before fine-tuning, we tested whether decomposition improves **retrieval quality**.
+## Summary of findings
+- Decomposition can hurt BM25 when queries become too “explorative” (Recall/MRR drop).
+- A weighted approach combining raw + decomposed retrieval scores was explored; numeric-focused decomposition showed promising MRR.
 
-We implemented multiple decomposition techniques (rule-based; details to be filled in once finalized) and evaluated them using FactIR-style retrieval metrics:
-- **Recall@K**
-- **MRR**
+## Results (test)
 
-**Key observation:**
-- More “explorative” / expanded queries often hurt BM25 ranking quality.
-- In practice we observed that as decomposition introduces extra terms or drifts semantically, BM25 can return less relevant passages, reducing Recall/MRR.
+| Setup | Accuracy | Macro-F1 | Weighted-F1 |
+|---|---:|---:|---:|
+| BART baseline (no decomposition) | 0.6128 | 0.5730 | 0.6277 |
+| RoBERTa-large + decomposed retrieval | 0.6373 | 0.5891 | 0.6494 |
+| BART + decomposed retrieval | 0.6369 | 0.5889 | 0.6495 |
 
-**Mitigation (weighted retrieval):**
-We introduced a weighted scoring idea:
-- **0.4** weight from the raw/original claim retrieval score
-- **0.6** weight from the decomposed query retrieval score
-
-**Result:**
-- The **Numeric decomposition** variant emerged as a strong candidate, improving MRR in our tests.
-
-### R3 — Fine-tune RoBERTa on the best decomposition setup
-Finally, we fine-tune a RoBERTa verifier using training pairs constructed from:
-- claim text
-- retrieved evidence passages (top-N)
-- gold label normalized to SUPPORTS / REFUTES / NEI
-
-We compare:
-- baseline (no decomposition)
-- decomposition-based retrieval
-- weighted retrieval (raw + decomposed)
-
-…and analyze how decomposition impacts downstream fact checking performance.
-
-## Repository layout
-
-- `retrieval.py`
-  - Builds/loads a local BM25 index over the evidence corpus
-  - Produces cached retrieval outputs for different query modes
-- `bart.py`
-  - Example HuggingFace training + evaluation loop using cached retrieval outputs
-- `NLP_Project.ipynb`, `train_and_evaluate.ipynb`
-  - Development notebooks used to run experiments and generate plots/tables
-- `requirements.txt`
-  - Python dependencies
-
-## Data & artifacts (not committed)
-
-This repo expects QuanTemp-formatted data to exist locally. By default, scripts refer to paths under `data/` (ignored by git).
-
-Typical required files:
-- Claims:
-  - `data/quantemp/data/raw_data/train_claims_quantemp.json`
-  - `data/quantemp/data/raw_data/val_claims_quantemp.json`
-  - `data/quantemp/data/raw_data/test_claims_quantemp.json`
-- Repo-provided BM25 reference (LLM ClaimDecomp queries):
-  - `data/quantemp/data/bm25_scored_evidence/bm25_top_100_claimdecomp.json`
-- Evidence corpus (for local BM25 indexing):
-  - `final_english_corpus.json` *(or update the path in `retrieval.py`)*
-
-Artifacts generated by our runs (ignored):
-- BM25 indexes and caches (`*.pkl`)
-- retrieval outputs
-- model checkpoints
-
-## Reproducing results
-
-### 1) Environment setup
-Create a Python environment and install deps:
-- `pip install -r requirements.txt`
-
-### 2) Retrieval experiments (BM25)
-Run the retrieval pipeline:
-- ensure the paths at the top of `retrieval.py` match your local data layout
-- run `retrieval.py`
-
-This will:
-- load train/val/test claims
-- build or load a BM25 index over the evidence corpus
-- generate retrieval outputs (top-100)
-- write caches under `outputs/` (configurable)
-
-### 3) Fact-checking baseline (zero-shot NLI)
-Use the notebook(s) to run a zero-shot verifier over top-5 evidence passages and report Accuracy/Macro-F1.
-
-### 4) Fine-tuning (verifier training)
-Run `bart.py` (or the fine-tuning notebook) after retrieval caches exist.
-
-The training data is constructed as pairs:
-- `premise` = evidence passage
-- `hypothesis` = claim
-- `label` = {SUPPORTS, REFUTES, NEI}
-
-### 5) Compare decomposition strategies
-For each strategy:
-- keep Top-K retrieval fixed (e.g., 100)
-- keep Top-N verification evidence fixed (e.g., 5)
-- keep aggregation consistent (average probabilities across evidence)
-
-Report:
-- retrieval metrics (Recall@K/MRR)
-- downstream verifier metrics (Accuracy/Macro-F1)
-
-## Group 17 report
-Our written report (methods + results + discussion) should be placed under a `report/` folder (ignored or committed depending on your preference). If you want it versioned, remove it from `.gitignore`.
-
-## TODO / placeholders
-- Add the final list of decomposition strategies and a short description of each.
-- Pin exact model IDs used in R1 comparisons.
-- Document the exact FactIR evaluation script/entry point used for R2.
+Notes:
+- **Macro-F1** treats all classes equally.
+- **Weighted-F1** accounts for class frequency.

@@ -160,6 +160,17 @@ print("✓ Decompositions loaded.")
 
 
 # =========================
+# WEIGHTED RETRIEVAL CONFIG
+# =========================
+# Combine BM25 scores from:
+# - raw claim query (baseline)
+# - decomposed subqueries (max pooled)
+# Final score = W_RAW * raw_score + W_DECOMP * decomp_score
+W_RAW = 0.4
+W_DECOMP = 0.6
+
+
+# =========================
 # RETRIEVAL FUNCTIONS
 # =========================
 def retrieve_baseline(claim_text: str, top_k: int = 100):
@@ -181,6 +192,39 @@ def retrieve_decomposed(subqueries, top_k: int = 100):
     # MAX pooling across subqueries
     max_scores = np.max(np.vstack(all_scores), axis=0)
     top_indices = np.argsort(max_scores)[::-1][:top_k]
+    return [evidence_corpus[i] for i in top_indices]
+
+def retrieve_baseline_with_scores(claim_text: str):
+    """Return full BM25 scores over the corpus for the raw claim query."""
+    query_tokens = tokenize(claim_text)
+    return bm25_index.get_scores(query_tokens)
+
+
+def retrieve_decomposed_with_scores(subqueries):
+    """Return full BM25 scores over the corpus for decomposed subqueries (max pooled)."""
+    if not subqueries:
+        # return zeros so weighted combination still works
+        return np.zeros(len(evidence_corpus), dtype=np.float32)
+
+    all_scores = []
+    for sq in subqueries:
+        sq_tokens = tokenize(sq)
+        all_scores.append(bm25_index.get_scores(sq_tokens))
+
+    return np.max(np.vstack(all_scores), axis=0)
+
+
+def retrieve_weighted(claim_text: str, subqueries, top_k: int = 100, w_raw: float = W_RAW, w_decomp: float = W_DECOMP):
+    """Weighted combination of raw-query BM25 and decomposed-query BM25 scores."""
+    raw_scores = retrieve_baseline_with_scores(claim_text)
+    decomp_scores = retrieve_decomposed_with_scores(subqueries)
+
+    # Ensure numpy arrays (rank_bm25 may return list-like)
+    raw_scores = np.asarray(raw_scores, dtype=np.float32)
+    decomp_scores = np.asarray(decomp_scores, dtype=np.float32)
+
+    combined = (w_raw * raw_scores) + (w_decomp * decomp_scores)
+    top_indices = np.argsort(combined)[::-1][:top_k]
     return [evidence_corpus[i] for i in top_indices]
 
 
@@ -211,15 +255,19 @@ else:
             claim_text = claim_obj["claim"]
             retrieval_results["baseline"][split_name][idx] = retrieve_baseline(claim_text, top_k=100)
 
-        # R1: decomposed
+        # R1: decomposed (WEIGHTED raw + subqueries)
         for idx in tqdm(range(len(claims)), desc=f"    R1 {split_name}", leave=False):
-            # quantemp_decomp indexed by idx in your original code
+            claim_text = claims[idx]["claim"]
             subqueries = quantemp_decomp[split_name][idx].get("subqueries", [])
-            retrieval_results["decomposed"][split_name][idx] = retrieve_decomposed(subqueries, top_k=100)
+            retrieval_results["decomposed"][split_name][idx] = retrieve_weighted(
+                claim_text,
+                subqueries,
+                top_k=100,
+                w_raw=W_RAW,
+                w_decomp=W_DECOMP,
+            )
 
         # R2: repo (map claim id -> repo query_id)
-        # Your original code used: claim_obj.get("id", idx)
-        # Keep that, but also try common fields.
         for idx, claim_obj in enumerate(claims):
             claim_id = (
                 claim_obj.get("id")
