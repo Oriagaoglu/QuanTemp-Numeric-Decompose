@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+
+# Virtualenvs
+.venv/
+venv/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# Large data / artifacts (keep code only)
+data/
+models/
+# outputs/
+quantemp_output/
+quantemp_output_test/
+results_quick/
+*json
+# Pickles / caches
+*.pkl
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+final_english_corpus.json
